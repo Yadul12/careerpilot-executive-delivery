@@ -1,0 +1,6 @@
+{
+  "name": "CareerPilot — Executive Job Search & Client Delivery Platform",
+  "description": "Enterprise SaaS platform for executive career management firms to orchestrate C-level and VP technology job-search pipelines, hiring-manager outreach, interview conversion, and client delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
