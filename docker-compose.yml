@@ -2,57 +2,52 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:16-alpine
-    container_name: careerpilot-postgres
+    image: pgvector/pgvector:pg16
+    container_name: talentiq_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${SQL_DB_NAME:-careerpilot}
-      POSTGRES_USER: ${SQL_ADMIN_USER:-postgres}
-      POSTGRES_PASSWORD: ${SQL_ADMIN_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-talentiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-talentiq_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-talentiq_enterprise}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-talentiq} -d ${POSTGRES_DB:-talentiq_enterprise}']
       interval: 5s
       timeout: 5s
       retries: 5
 
-  backend-fastapi:
+  app:
     build:
-      context: ./backend_fastapi
+      context: .
       dockerfile: Dockerfile
-    container_name: careerpilot-fastapi
+    container_name: talentiq_careerpilot_app
     restart: unless-stopped
-    environment:
-      SQL_HOST: postgres
-      SQL_DB_NAME: ${SQL_DB_NAME:-careerpilot}
-      SQL_USER: ${SQL_USER:-postgres}
-      SQL_PASSWORD: ${SQL_PASSWORD:-postgres}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-enterprise-jwt-secret-change-in-prod}
     ports:
-      - "8000:8000"
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-talentiq}:${POSTGRES_PASSWORD:-talentiq_secret}@postgres:5432/${POSTGRES_DB:-talentiq_enterprise}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
 
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: careerpilot-web
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      SQL_HOST: postgres
-      SQL_DB_NAME: ${SQL_DB_NAME:-careerpilot}
-      SQL_USER: ${SQL_USER:-postgres}
-      SQL_PASSWORD: ${SQL_PASSWORD:-postgres}
-      SQL_ADMIN_USER: ${SQL_ADMIN_USER:-postgres}
-      SQL_ADMIN_PASSWORD: ${SQL_ADMIN_PASSWORD:-postgres}
+  fastapi-nlp-service:
+    image: python:3.11-slim
+    container_name: talentiq_fastapi_nlp
+    working_dir: /srv
+    volumes:
+      - ./backend:/srv
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "3000:3000"
+      - '8000:8000'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-talentiq}:${POSTGRES_PASSWORD:-talentiq_secret}@postgres:5432/${POSTGRES_DB:-talentiq_enterprise}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

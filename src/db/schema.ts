@@ -413,3 +413,311 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   reports: many(clientReports),
   activities: many(activityLogs),
 }));
+
+// ============================================================================
+// TALENTIQ — AI-POWERED EXECUTIVE RESUME INTELLIGENCE & JOB MATCHING TABLES
+// ============================================================================
+
+// 16. Candidates
+export const candidates = pgTable(
+  'candidates',
+  {
+    id: serial('id').primaryKey(),
+    fullName: text('full_name').notNull(),
+    email: text('email').notNull(),
+    phone: text('phone').notNull(),
+    location: text('location').notNull(),
+    currentDesignation: text('current_designation').notNull(),
+    previousDesignations: text('previous_designations').notNull(),
+    totalYearsExperience: integer('total_years_experience').notNull(),
+    primaryDomain: text('primary_domain').notNull(), // Cloud & Infrastructure, AI & Data, Enterprise Architecture, Platform & DevOps, FinTech & Security
+    extractionConfidence: integer('extraction_confidence').notNull().default(94),
+    analysisMonth: text('analysis_month').notNull().default('2026-10'),
+    isSynthetic: boolean('is_synthetic').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_candidates_domain').on(table.primaryDomain),
+    index('idx_candidates_exp').on(table.totalYearsExperience),
+  ]
+);
+
+// 17. Candidate_Resumes
+export const candidateResumes = pgTable(
+  'candidate_resumes',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    filename: text('filename').notNull(),
+    fileType: text('file_type').notNull(), // PDF, DOCX, TXT
+    rawText: text('raw_text').notNull(),
+    extractionConfidence: integer('extraction_confidence').notNull().default(94),
+    parsedAt: timestamp('parsed_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_candidate_resumes_cid').on(table.candidateId)]
+);
+
+// 18. Candidate_Profiles
+export const candidateProfiles = pgTable(
+  'candidate_profiles',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull()
+      .unique(),
+    industryExperience: text('industry_experience').notNull(),
+    leadershipExperience: text('leadership_experience').notNull(),
+    educationalQualifications: text('educational_qualifications').notNull(),
+    majorAchievements: text('major_achievements').notNull(),
+    companiesWorkedAt: text('companies_worked_at').notNull(),
+    executiveSummary: text('executive_summary').notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_candidate_profiles_cid').on(table.candidateId)]
+);
+
+// 19. Employment_History
+export const employmentHistory = pgTable(
+  'employment_history',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    company: text('company').notNull(),
+    designation: text('designation').notNull(),
+    duration: text('duration').notNull(),
+    highlights: text('highlights').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_emp_history_cid').on(table.candidateId)]
+);
+
+// 20. Candidate_Skills
+export const candidateSkills = pgTable(
+  'candidate_skills',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    skillName: text('skill_name').notNull(),
+    skillCategory: text('skill_category').notNull(), // Architecture, Cloud, Data/AI, Leadership, Governance
+    proficiencyLevel: text('proficiency_level').notNull().default('Expert'),
+    yearsUsed: integer('years_used').notNull().default(8),
+    isVerified: boolean('is_verified').notNull().default(true),
+  },
+  (table) => [
+    index('idx_candidate_skills_cid').on(table.candidateId),
+    index('idx_candidate_skills_name').on(table.skillName),
+  ]
+);
+
+// 21. Certifications
+export const certifications = pgTable(
+  'certifications',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    issuingOrg: text('issuing_org').notNull(),
+    issueYear: text('issue_year').notNull(),
+  },
+  (table) => [index('idx_certifications_cid').on(table.candidateId)]
+);
+
+// 22. Technology_Roles (Role Classification Taxonomy)
+export const technologyRoles = pgTable(
+  'technology_roles',
+  {
+    id: serial('id').primaryKey(),
+    category: text('category').notNull(), // Executive Leadership, Engineering Leadership, Architecture, Data and Analytics, Infrastructure and Operations
+    roleTitle: text('role_title').notNull().unique(),
+    typicalResponsibilities: text('typical_responsibilities').notNull(),
+    requiredTechnicalKnowledge: text('required_technical_knowledge').notNull(),
+    expectedLeadershipExperience: text('expected_leadership_experience').notNull(),
+    relevantIndustryExperience: text('relevant_industry_experience').notNull(),
+    commonQualifications: text('common_qualifications').notNull(),
+    seniorityBand: text('seniority_band').notNull().default('C-Level / VP'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_tech_roles_category').on(table.category)]
+);
+
+// 23. Job_Descriptions
+export const jobDescriptions = pgTable(
+  'job_descriptions',
+  {
+    id: serial('id').primaryKey(),
+    jobTitle: text('job_title').notNull(),
+    company: text('company').notNull(),
+    roleCategory: text('role_category').notNull(), // Executive Leadership, Engineering Leadership, Architecture, Data and Analytics, Infrastructure and Operations
+    taxonomyRoleId: integer('taxonomy_role_id').references(() => technologyRoles.id, {
+      onDelete: 'set null',
+    }),
+    seniorityLevel: text('seniority_level').notNull(), // C-Suite, SVP / VP, Director, Principal / Head
+    yearsOfExperience: integer('years_of_experience').notNull().default(15),
+    leadershipExpectations: text('leadership_expectations').notNull(),
+    industryRequirements: text('industry_requirements').notNull(),
+    technicalResponsibilities: text('technical_responsibilities').notNull(),
+    location: text('location').notNull(),
+    compensationInfo: text('compensation_info').notNull(),
+    rawDescription: text('raw_description').notNull(),
+    isSynthetic: boolean('is_synthetic').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_jd_category').on(table.roleCategory),
+    index('idx_jd_company').on(table.company),
+  ]
+);
+
+// 24. Job_Requirements
+export const jobRequirements = pgTable(
+  'job_requirements',
+  {
+    id: serial('id').primaryKey(),
+    jobId: integer('job_id')
+      .references(() => jobDescriptions.id, { onDelete: 'cascade' })
+      .notNull(),
+    skillName: text('skill_name').notNull(),
+    requirementType: text('requirement_type').notNull().default('Required'), // Required, Preferred
+    weightImportance: integer('weight_importance').notNull().default(10),
+  },
+  (table) => [index('idx_job_req_jid').on(table.jobId)]
+);
+
+// 25. Match_Results
+export const matchResults = pgTable(
+  'match_results',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    jobId: integer('job_id')
+      .references(() => jobDescriptions.id, { onDelete: 'cascade' })
+      .notNull(),
+    overallScore: integer('overall_score').notNull(),
+    technicalScore: integer('technical_score').notNull(),
+    leadershipScore: integer('leadership_score').notNull(),
+    seniorityScore: integer('seniority_score').notNull(),
+    domainScore: integer('domain_score').notNull(),
+    industryScore: integer('industry_score').notNull(),
+    progressionScore: integer('progression_score').notNull(),
+    qualificationScore: integer('qualification_score').notNull(),
+    confidenceTier: text('confidence_tier').notNull(), // High Confidence (>=82), Strong Contender (70-81), Partial Alignment (<70)
+    scoringMode: text('scoring_mode').notNull().default('Hybrid Semantic + Rule Engine'),
+    evaluatedAt: timestamp('evaluated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_match_candidate').on(table.candidateId),
+    index('idx_match_job').on(table.jobId),
+    index('idx_match_score').on(table.overallScore),
+  ]
+);
+
+// 26. Match_Explanations
+export const matchExplanations = pgTable(
+  'match_explanations',
+  {
+    id: serial('id').primaryKey(),
+    matchId: integer('match_id')
+      .references(() => matchResults.id, { onDelete: 'cascade' })
+      .notNull()
+      .unique(),
+    matchingSkills: text('matching_skills').notNull(),
+    relevantLeadership: text('relevant_leadership').notNull(),
+    matchingIndustry: text('matching_industry').notNull(),
+    missingQualifications: text('missing_qualifications').notNull(),
+    potentialConcerns: text('potential_concerns').notNull(),
+    recommendationRationale: text('recommendation_rationale').notNull(),
+  },
+  (table) => [index('idx_match_exp_mid').on(table.matchId)]
+);
+
+// 27. Skills_Gap_Analysis
+export const skillsGapAnalysis = pgTable(
+  'skills_gap_analysis',
+  {
+    id: serial('id').primaryKey(),
+    matchId: integer('match_id').references(() => matchResults.id, {
+      onDelete: 'cascade',
+    }),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull(),
+    jobId: integer('job_id')
+      .references(() => jobDescriptions.id, { onDelete: 'cascade' })
+      .notNull(),
+    demonstratedSkills: text('demonstrated_skills').notNull(),
+    missingRequiredSkills: text('missing_required_skills').notNull(),
+    unmentionedProbableSkills: text('unmentioned_probable_skills').notNull(),
+    missingPreferredSkills: text('missing_preferred_skills').notNull(),
+    leadershipGaps: text('leadership_gaps').notNull(),
+    industryGaps: text('industry_gaps').notNull(),
+    clarificationAreas: text('clarification_areas').notNull(),
+    positioningImprovementPlan: text('positioning_improvement_plan').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_gap_candidate').on(table.candidateId),
+    index('idx_gap_job').on(table.jobId),
+  ]
+);
+
+// 28. Positioning_Recommendations
+export const positioningRecommendations = pgTable(
+  'positioning_recommendations',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id')
+      .references(() => candidates.id, { onDelete: 'cascade' })
+      .notNull()
+      .unique(),
+    targetPositions: text('target_positions').notNull(),
+    alternativePaths: text('alternative_paths').notNull(),
+    strongestDifferentiators: text('strongest_differentiators').notNull(),
+    skillsNeedingVisibility: text('skills_needing_visibility').notNull(),
+    resumePositioningAdvice: text('resume_positioning_advice').notNull(),
+    relevantIndustrySegments: text('relevant_industry_segments').notNull(),
+    recommendedSearchStrategy: text('recommended_search_strategy').notNull(),
+    approvedByManager: boolean('approved_by_manager').notNull().default(false),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('idx_pos_rec_cid').on(table.candidateId)]
+);
+
+// 29. Evaluation_Logs
+export const evaluationLogs = pgTable('evaluation_logs', {
+  id: serial('id').primaryKey(),
+  operationType: text('operation_type').notNull(), // Resume Parse, JD Parse, Candidate-Job Match, Positioning Generation
+  modelUsed: text('model_used').notNull(),
+  fallbackTriggered: boolean('fallback_triggered').notNull().default(false),
+  latencyMs: integer('latency_ms').notNull().default(140),
+  inputSummary: text('input_summary').notNull(),
+  outputMetadata: text('output_metadata').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// 30. Matching_Weights_Config
+export const matchingWeightsConfig = pgTable('matching_weights_config', {
+  id: serial('id').primaryKey(),
+  configName: text('config_name').notNull().unique(),
+  technicalWeight: integer('technical_weight').notNull().default(25),
+  leadershipWeight: integer('leadership_weight').notNull().default(20),
+  seniorityWeight: integer('seniority_weight').notNull().default(15),
+  domainWeight: integer('domain_weight').notNull().default(15),
+  industryWeight: integer('industry_weight').notNull().default(10),
+  progressionWeight: integer('progression_weight').notNull().default(10),
+  qualificationWeight: integer('qualification_weight').notNull().default(5),
+  updatedBy: text('updated_by').notNull().default('System Administrator'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+

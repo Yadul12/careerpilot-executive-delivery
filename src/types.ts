@@ -2,7 +2,9 @@ export type RoleName =
   | 'Administrator'
   | 'Client Delivery Owner'
   | 'Research Associate'
-  | 'Client';
+  | 'Client'
+  | 'Recruitment Analyst'
+  | 'Delivery Manager';
 
 export interface UserProfile {
   id: number;

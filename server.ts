@@ -1,9 +1,8 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as dotenv from 'dotenv';
-import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import { requireAuth, type AuthRequest } from './src/middleware/auth.ts';
 import {
   getOrCreateUser,
   switchUserRole,
@@ -29,6 +28,23 @@ import {
   getClientReportsData,
   generateClientWeeklyReportRecord,
 } from './src/db/repository.ts';
+import {
+  getTalentIQDashboardAnalytics,
+  getTalentIQCandidates,
+  createAndParseCandidateResume,
+  updateCandidateIntelligenceProfile,
+  reprocessCandidateResume,
+  getTechnologyRolesTaxonomy,
+  createTechnologyRole,
+  getTalentIQJobDescriptions,
+  createAndAnalyseJobDescription,
+  updateJobDescriptionRecord,
+  getTalentIQMatches,
+  runCandidateJobMatch,
+  getMatchingWeights,
+  updateMatchingWeightsAndRecalculate,
+  getEvaluationLogs,
+} from './src/db/talentiq_repository.ts';
 
 dotenv.config();
 
@@ -37,7 +53,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -45,7 +61,7 @@ async function startServer() {
   app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
     try {
       const uid = req.user!.uid;
-      const email = req.user!.email || 'executive@careerpilot.io';
+      const email = req.user!.email || 'executive@talentiq.io';
       const name = req.user!.name || email.split('@')[0];
       const userRecord = await getOrCreateUser(uid, email, name);
       const team = await getAllTeamMembers();
@@ -56,12 +72,14 @@ async function startServer() {
     }
   });
 
-  // Switch active RBAC role for testing/operating across the 4 enterprise roles
+  // Switch active RBAC role for testing/operating across enterprise roles
   app.patch('/api/auth/role', requireAuth, async (req: AuthRequest, res) => {
     try {
       const { roleName } = req.body;
       const allowedRoles = [
         'Administrator',
+        'Recruitment Analyst',
+        'Delivery Manager',
         'Client Delivery Owner',
         'Research Associate',
         'Client',
@@ -458,8 +476,208 @@ async function startServer() {
     }
   });
 
+  // ==========================================================================
+  // TALENTIQ — AI-POWERED EXECUTIVE RESUME INTELLIGENCE & JOB MATCHING ROUTES
+  // ==========================================================================
+
+  app.get('/api/talentiq/dashboard', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const data = await getTalentIQDashboardAnalytics();
+      res.json(data);
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/dashboard:', error);
+      res.status(500).json({ error: error.message || 'Failed to load TalentIQ dashboard' });
+    }
+  });
+
+  app.get('/api/talentiq/candidates', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const candidates = await getTalentIQCandidates();
+      res.json({ candidates });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/candidates:', error);
+      res.status(500).json({ error: error.message || 'Failed to load candidates' });
+    }
+  });
+
+  app.post('/api/talentiq/resumes/parse', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { filename, fileType, rawText } = req.body;
+      if (!rawText || String(rawText).trim().length < 20) {
+        return res.status(400).json({
+          error: 'Please provide valid resume content (PDF, DOCX, or TXT) to extract executive intelligence.',
+        });
+      }
+      const fname = String(filename || 'executive_resume.pdf');
+      const lower = fname.toLowerCase();
+      if (!lower.endsWith('.pdf') && !lower.endsWith('.docx') && !lower.endsWith('.txt')) {
+        return res.status(400).json({
+          error: 'Unsupported file format. TalentIQ supports PDF, DOCX, and TXT resumes.',
+        });
+      }
+      const candidate = await createAndParseCandidateResume({
+        filename: fname,
+        fileType: fileType || (lower.endsWith('.docx') ? 'DOCX' : lower.endsWith('.txt') ? 'TXT' : 'PDF'),
+        rawText: String(rawText),
+      });
+      res.status(201).json({ candidate });
+    } catch (error: any) {
+      console.error('Error in POST /api/talentiq/resumes/parse:', error);
+      res.status(500).json({ error: error.message || 'Failed to parse resume' });
+    }
+  });
+
+  app.patch('/api/talentiq/candidates/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const candidateId = Number(req.params.id);
+      const updated = await updateCandidateIntelligenceProfile(candidateId, req.body);
+      res.json({ candidate: updated });
+    } catch (error: any) {
+      console.error('Error in PATCH /api/talentiq/candidates/:id:', error);
+      res.status(500).json({ error: error.message || 'Failed to update candidate profile' });
+    }
+  });
+
+  app.post('/api/talentiq/candidates/:id/reprocess', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const candidateId = Number(req.params.id);
+      const updated = await reprocessCandidateResume(candidateId);
+      res.json({ candidate: updated });
+    } catch (error: any) {
+      console.error('Error in POST /api/talentiq/candidates/:id/reprocess:', error);
+      res.status(500).json({ error: error.message || 'Failed to reprocess candidate resume' });
+    }
+  });
+
+  app.get('/api/talentiq/roles', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const roles = await getTechnologyRolesTaxonomy();
+      res.json({ roles });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/roles:', error);
+      res.status(500).json({ error: error.message || 'Failed to load technology roles taxonomy' });
+    }
+  });
+
+  app.post('/api/talentiq/roles', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { category, roleTitle, typicalResponsibilities, requiredTechnicalKnowledge } = req.body;
+      if (!category || !roleTitle || !typicalResponsibilities || !requiredTechnicalKnowledge) {
+        return res.status(400).json({
+          error: 'Category, role title, typical responsibilities, and required technical knowledge are required.',
+        });
+      }
+      const created = await createTechnologyRole(req.body);
+      res.status(201).json({ role: created });
+    } catch (error: any) {
+      console.error('Error in POST /api/talentiq/roles:', error);
+      res.status(500).json({ error: error.message || 'Failed to create technology role' });
+    }
+  });
+
+  app.get('/api/talentiq/jobs', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const jobs = await getTalentIQJobDescriptions();
+      res.json({ jobs });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/jobs:', error);
+      res.status(500).json({ error: error.message || 'Failed to load job descriptions' });
+    }
+  });
+
+  app.post('/api/talentiq/jobs/analyse', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { rawDescription, jobTitle, company, location, compensationInfo } = req.body;
+      if (!rawDescription || String(rawDescription).trim().length < 20) {
+        return res.status(400).json({
+          error: 'Please provide a complete job description text to analyse.',
+        });
+      }
+      const job = await createAndAnalyseJobDescription({
+        rawDescription: String(rawDescription),
+        jobTitle,
+        company,
+        location,
+        compensationInfo,
+      });
+      res.status(201).json({ job });
+    } catch (error: any) {
+      console.error('Error in POST /api/talentiq/jobs/analyse:', error);
+      res.status(500).json({ error: error.message || 'Failed to analyse job description' });
+    }
+  });
+
+  app.patch('/api/talentiq/jobs/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const jobId = Number(req.params.id);
+      const updated = await updateJobDescriptionRecord(jobId, req.body);
+      res.json({ job: updated });
+    } catch (error: any) {
+      console.error('Error in PATCH /api/talentiq/jobs/:id:', error);
+      res.status(500).json({ error: error.message || 'Failed to update job description' });
+    }
+  });
+
+  app.get('/api/talentiq/matches', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const matches = await getTalentIQMatches();
+      res.json({ matches });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/matches:', error);
+      res.status(500).json({ error: error.message || 'Failed to load candidate-job matches' });
+    }
+  });
+
+  app.post('/api/talentiq/matches/evaluate', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { candidateId, jobId } = req.body;
+      if (!candidateId || !jobId) {
+        return res.status(400).json({ error: 'Both candidateId and jobId are required.' });
+      }
+      const match = await runCandidateJobMatch(Number(candidateId), Number(jobId));
+      res.status(201).json({ match });
+    } catch (error: any) {
+      console.error('Error in POST /api/talentiq/matches/evaluate:', error);
+      res.status(500).json({ error: error.message || 'Failed to evaluate candidate-job match' });
+    }
+  });
+
+  app.get('/api/talentiq/weights', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const weights = await getMatchingWeights();
+      res.json({ weights });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/weights:', error);
+      res.status(500).json({ error: error.message || 'Failed to load matching weights' });
+    }
+  });
+
+  app.put('/api/talentiq/weights', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const result = await updateMatchingWeightsAndRecalculate({
+        ...req.body,
+        updatedBy: req.user?.name || req.user?.email || 'Administrator',
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error('Error in PUT /api/talentiq/weights:', error);
+      res.status(500).json({ error: error.message || 'Failed to update matching weights' });
+    }
+  });
+
+  app.get('/api/talentiq/logs', requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const logs = await getEvaluationLogs();
+      res.json({ logs });
+    } catch (error: any) {
+      console.error('Error in GET /api/talentiq/logs:', error);
+      res.status(500).json({ error: error.message || 'Failed to load evaluation logs' });
+    }
+  });
+
   // Vite middleware in development, static assets in production
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -467,8 +685,17 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
